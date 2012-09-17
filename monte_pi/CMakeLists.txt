@@ -3,6 +3,7 @@ PROJECT(Matrix_Multiplication_CUDA)
 
 #The CMake Minimum version that is required. The FindCUDA script
 #is distributed since version 2.8
+#Emerald only has 2.6.3, so we'll have to bootstrap it up
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
 
@@ -20,3 +21,4 @@ INCLUDE(FindMPI)
 
 CUDA_ADD_EXECUTABLE(monte_pi monte_pi.cu)
 target_link_libraries (monte_pi ${MPI_LIBRARIES})
+INSTALL(TARGETS monte_pi RUNTIME DESTINATION bin)

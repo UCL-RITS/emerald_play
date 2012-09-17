@@ -1,7 +1,11 @@
 remote: emerald.einfrastructuresouth.ac.uk
 remote_source_path: play
+remote_build_path: build
+remote_install_path: install
+remote_results_path: results
 exclude:
     - .git
     - deploy
     - fabfile.py
     - "*.pyc"
+jobscripts: jobscripts

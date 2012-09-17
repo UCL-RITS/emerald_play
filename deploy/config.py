@@ -8,4 +8,5 @@ user_configuration=yaml.load(open(os.path.join(env.localroot,'deploy','config_us
 configuration.update(user_configuration)
 env.update(configuration)
 env.hosts=['%s@%s'%(env.username,env.remote)]
-env.local_source_path=env.localroot
+env.local_source_path=env.localroot+'/'
+env.templates=os.path.join(env.localroot,'deploy','templates')
