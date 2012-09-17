@@ -6,8 +6,9 @@
 // Result is pi
 #include "curand_kernel.h"
 #include "stdio.h"
+#include <mpi.h>
 
-const int thread_count=256;
+const int thread_count=32;
 const int cycle_count=10000;
 
 // Pseudo-object sample ---------------
@@ -109,9 +110,13 @@ void generate_sample(float *result)
 
 int main( int argc, char** argv) 
 {
-	
+	MPI_Init(&argc, &argv);
+	int commRank, commSize;
+	MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
+	MPI_Comm_size(MPI_COMM_WORLD, &commSize);
 	float result_host=0.0;
-	float result_total=0.0;
+	float result_total=10.0;
+	float result_mpi=0.0;
 	for (int i=0;i<thread_count;i++){
 		
 		init_zero(&samples_host[i]);
@@ -119,15 +124,22 @@ int main( int argc, char** argv)
     handle_error(cudaMalloc ( &samples_device, thread_count*sizeof( sample ) ),"Allocate device samples");
 	handle_error(cudaMalloc (&result_device,sizeof(float)),"Allocate result");
     
-	init_device_sample <<< 1, tpb >>> ( samples_device, time(NULL) );
+	init_device_sample <<< 1, tpb >>> ( samples_device, time(NULL)*commRank );
 	
 	for (int cycle=0;cycle<cycle_count;cycle++)
 	{
 		generate_sample(&result_host);
 		result_total+=result_host;
 	}
-	printf("Result: %f\n",4.0*result_total/((float) thread_count*cycle_count));
+	printf("Partial Result: %f\n",4.0*result_total/((float) thread_count*cycle_count));
 	cudaFree(result_device);
 	cudaFree(samples_device);
+	// Reduce the MPI-Samples
+	
+	MPI_Reduce(&result_total,&result_mpi,1,MPI_FLOAT,MPI_SUM,0,MPI_COMM_WORLD);
+	if (commRank==0){
+		printf("Final Result over %i mpi processes: %f\n",commSize,4.0*result_mpi/((float) thread_count*cycle_count*commSize));
+	}
+	MPI_Finalize();
     return 0;
 }

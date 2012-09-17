@@ -9,11 +9,14 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 #Searching CUDA
 FIND_PACKAGE(CUDA)
 
+#Find MPI
+FIND_PACKAGE(MPI)
 
 
+include_directories (${MPI_INCLUDE_PATH})
 #Include the FindCUDA script
 INCLUDE(FindCUDA)
+INCLUDE(FindMPI)
 
-#The rule to build the executable program matrixMul from matrixmul.cu
-# and matrixMul_gold.cpp
 CUDA_ADD_EXECUTABLE(monte_pi monte_pi.cu)
+target_link_libraries (monte_pi ${MPI_LIBRARIES})
