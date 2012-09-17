@@ -28,6 +28,7 @@ def build(project):
 def sub(project):
 	env.project=project
 	run("mkdir -p ~/{jobscripts}/".format(**env))
+	run("mkdir -p ~/{results}/{project}".format(**env))
 	upload_template(filename="{templates}/{project}.sh".format(**env),destination="~/{jobscripts}/".format(**env),context=env)
 	with prefix("module load intel cuda"):
 		run("bsub ~/{jobscripts}/{project}.sh".format(**env))
