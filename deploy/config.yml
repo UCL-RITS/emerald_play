@@ -1,0 +1,7 @@
+remote: emerald.einfrastructuresouth.ac.uk
+remote_source_path: play
+exclude:
+    - .git
+    - deploy
+    - fabfile.py
+    - "*.pyc"
