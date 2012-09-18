@@ -55,7 +55,6 @@ void display( sample * asample)
 	// Prepare
 	dim3 tpb(thread_count,1,1);
 	sample *samples_device;
-	sample samples_host[thread_count];
 	float *result_device;
 
 __global__ void init_device_sample ( sample *samples, unsigned long seed )
@@ -96,49 +95,46 @@ void handle_error( cudaError_t error, char* message)
 	}
 }
 
+void initialise_samples(int rank)
+{
+	handle_error(cudaMalloc ( &samples_device, thread_count*sizeof( sample ) ),"Allocate device samples");
+	handle_error(cudaMalloc (&result_device,sizeof(float)),"Allocate result");
+	init_device_sample <<< 1, tpb >>> ( samples_device, time(NULL)*rank );
+}
+
 void generate_sample(float *result)
 {
 	generate_samples <<< 1, tpb >>> ( samples_device);	
 	reduce_samples <<<1,tpb>>> (samples_device,result_device);
-	// Retrieve
-	handle_error(	cudaMemcpy(samples_host,samples_device,thread_count*sizeof( sample ),cudaMemcpyDeviceToHost),"Retrieve device samples");
 	handle_error(   cudaMemcpy(result,result_device,sizeof(float),cudaMemcpyDeviceToHost),"Retrieve result");
-	//for (int i=0;i<thread_count;i++){
-	//	display(&samples_host[i]);
-	//}
 }
 
 int main( int argc, char** argv) 
 {
 	MPI_Init(&argc, &argv);
-	int commRank, commSize;
-	MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
-	MPI_Comm_size(MPI_COMM_WORLD, &commSize);
+	int rank, size;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
 	float result_host=0.0;
 	float result_total=10.0;
 	float result_mpi=0.0;
-	for (int i=0;i<thread_count;i++){
-		
-		init_zero(&samples_host[i]);
-	}
-    handle_error(cudaMalloc ( &samples_device, thread_count*sizeof( sample ) ),"Allocate device samples");
-	handle_error(cudaMalloc (&result_device,sizeof(float)),"Allocate result");
-    
-	init_device_sample <<< 1, tpb >>> ( samples_device, time(NULL)*commRank );
+
+	initialise_samples(rank);
 	
 	for (int cycle=0;cycle<cycle_count;cycle++)
 	{
 		generate_sample(&result_host);
 		result_total+=result_host;
 	}
-	printf("Partial Result: %f\n",4.0*result_total/((float) thread_count*cycle_count));
+	
+	printf("Partial Result on rank %i: %f\n",rank,4.0*result_total/((float) thread_count*cycle_count));
 	cudaFree(result_device);
 	cudaFree(samples_device);
 	// Reduce the MPI-Samples
 	
 	MPI_Reduce(&result_total,&result_mpi,1,MPI_FLOAT,MPI_SUM,0,MPI_COMM_WORLD);
-	if (commRank==0){
-		printf("Final Result over %i mpi processes: %f\n",commSize,4.0*result_mpi/((float) thread_count*cycle_count*commSize));
+	if (rank==0){
+		printf("Final Result over %i mpi processes: %f\n",size,4.0*result_mpi/((float) thread_count*cycle_count*size));
 	}
 	MPI_Finalize();
     return 0;

@@ -2,9 +2,11 @@ from config import *
 from fabric.contrib.project import *
 from fabric.contrib.files import *
 from functools import wraps
+import time
+import re
 @task
 def stat():
-	run('bjobs')
+	return run('bjobs')
 	
 @task
 def sync():
@@ -92,8 +94,15 @@ def sub(project):
 	upload_template(filename="{templates}/{project}.sh".format(**env),destination="~/{jobscripts}/".format(**env),context=env)
 	with prefix("module load intel cuda"):
 		run("bsub < ~/{jobscripts}/{project}.sh".format(**env))
-		
+
+@task
+def wait():
+  """Wait until all jobs currently qsubbed are complete, then return"""
+  while not re.search("No unfinished",stat()):
+	time.sleep(10)
+
 @task
 @eachproject
 def fetch(project):
-	local("rsync -pthrvz {username}@{remote}:{remote_results_path}/{project}/ {localroot}/results/{project}".format(**env))
+	local("mkdir -p {localroot}/{project}/results")
+	local("rsync -pthrvz {username}@{remote}:{remote_results_path}/{project}/ {localroot}/{project}/results".format(**env))
