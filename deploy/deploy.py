@@ -91,7 +91,7 @@ def sub(project):
 	run("mkdir -p ~/{remote_results_path}/{project}".format(**env))
 	upload_template(filename="{templates}/{project}.sh".format(**env),destination="~/{jobscripts}/".format(**env),context=env)
 	with prefix("module load intel cuda"):
-		run("bsub ~/{jobscripts}/{project}.sh".format(**env))
+		run("bsub < ~/{jobscripts}/{project}.sh".format(**env))
 		
 @task
 @eachproject
