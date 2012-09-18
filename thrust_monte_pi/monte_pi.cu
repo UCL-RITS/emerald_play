@@ -5,109 +5,106 @@
 // Reduce on mean
 // Result is pi
 #include "curand_kernel.h"
-#include "stdio.h"
+#include <iostream>
+#include <stdio.h>
 #include <mpi.h>
+#include <thrust/device_vector.h>
+#include <thrust/transform_reduce.h>
+#include <thrust/functional.h>
+#include <thrust/tuple.h>
 
 const int thread_count=32;
-const int cycle_count=10000;
+const int cycle_count=2;
 
 // Pseudo-object sample ---------------
 
-struct sample {
+class Sample {
+public:
+	__device__ Sample()
+	: id(0),x(0),y(0)
+	{
+	    
+	}
+
+	__device__ void seed(unsigned long seed, int index)
+	{
+		id=index;
+		curand_init ( seed, id, 0, &randState );
+	}
+
+	__device__ void generate()
+	{
+	    x= curand_uniform( &randState );
+		y= curand_uniform( &randState );
+	}
+
+	__host__ __device__ bool within()
+	{
+		return (pow(x,2)+pow(y,2))<1.0;
+	}
+	void __host__ __device__ display()
+	{
+		// Use C-Style io because CUDA 2.0 doesn't support C++ io on devices
+		printf("%d : %f, %f (%d)\n",id,x,y,within());
+	}
+private:
 	int id;
 	curandState randState;
-	float x;
-	float y;
-	int within;
+	double x;
+	double y;
 };
 
-__device__ void init_with_seed(sample *self,unsigned long seed)
-{
-	self->id = threadIdx.x;
-    curand_init ( seed, self->id, 0, &self->randState );
-	self->x=0;
-	self->y=0;
-	self->within=0;
-}
 
-__device__ void generate(sample * self)
-{
-    self->x= curand_uniform( &self->randState );
-	self->y= curand_uniform( &self->randState );
-	self->within= (pow(self->x,2)+pow(self->y,2))<1.0;
-}
-
-void init_zero( sample *self)
-{
-	self->id = 0;
-	self->x=0;
-	self->y=0;
-	self->within=0;
-}
-
-void display( sample * asample)
-{
-	printf("%d : %f, %f (%d)\n",asample->id,asample->x,asample->y,asample->within);
-}
 
 //--------------- Pseudo-object CUDA sample array ---
-
-	// Prepare
-	dim3 tpb(thread_count,1,1);
-	sample *samples_device;
-	float *result_device;
-
-__global__ void init_device_sample ( sample *samples, unsigned long seed )
+class Device_sampler
 {
-	sample *self=&samples[threadIdx.x];
-	init_with_seed(self,seed);
-}
-
-__global__ void generate_samples (sample * samples)
-{
-	sample *self=&samples[threadIdx.x];
-	generate(self);
-}
-
-__global__ void reduce_samples (sample * samples, float * result){
-	__shared__ float cache[thread_count];
-	int thread_id=threadIdx.x;
-	cache[thread_id]=samples[thread_id].within;
-	int reduction_index=thread_count/2;
-	__syncthreads();
-	while (reduction_index!=0){
-		if (thread_id<reduction_index){
-			cache[thread_id]+=cache[thread_id+reduction_index];
+public:
+	Device_sampler(int count,int rank)
+	: samples(count), rank(rank)
+	{
+		// seed the samples from their thread number
+		// make a zip of samples and their number
+		thrust::for_each(
+			thrust::make_zip_iterator(thrust::make_tuple(samples.begin(),thrust::make_counting_iterator(0))),
+			thrust::make_zip_iterator(thrust::make_tuple(samples.end(),thrust::make_counting_iterator(count))),
+			bind_seed(rank)
+			);
+	
+	}
+	
+	struct bind_seed 
+	{
+		bind_seed(int rank):rank(rank){}
+		__device__ void operator()(thrust::tuple<Sample&,int> t)
+		{
+			thrust::get<0>(t).seed(rank,thrust::get<1>(t));
 		}
-		__syncthreads();
-		reduction_index/=2;
+		int rank;
+	};
+	
+	// std::mem_fun_ref does not bind as a device function
+	// so we need to create our own lambda
+	struct bind_generate
+	{
+		__device__ bool operator()(Sample &sample) const
+		{
+			sample.generate();
+			return sample.within();
+		}
+	};
+		
+	double result(){
+		return 4.0*thrust::transform_reduce(
+			samples.begin(),samples.end(),
+			bind_generate(),
+			0,thrust::plus<double>())
+		/static_cast<double>(samples.size());
 	}
-	if (thread_id==0) {
-		*result=cache[0];
-	}
-}
-
-void handle_error( cudaError_t error, char* message)
-{
-	if(error!=cudaSuccess) { 
-		fprintf(stderr,"ERROR: %s : %s\n",message,cudaGetErrorString(error)); 
-		exit(-1); 
-	}
-}
-
-void initialise_samples(int rank)
-{
-	handle_error(cudaMalloc ( &samples_device, thread_count*sizeof( sample ) ),"Allocate device samples");
-	handle_error(cudaMalloc (&result_device,sizeof(float)),"Allocate result");
-	init_device_sample <<< 1, tpb >>> ( samples_device, time(NULL)*rank );
-}
-
-void generate_sample(float *result)
-{
-	generate_samples <<< 1, tpb >>> ( samples_device);	
-	reduce_samples <<<1,tpb>>> (samples_device,result_device);
-	handle_error(   cudaMemcpy(result,result_device,sizeof(float),cudaMemcpyDeviceToHost),"Retrieve result");
-}
+private:
+	thrust::device_vector<Sample> samples;
+	int rank;
+};
 
 int main( int argc, char** argv) 
 {
@@ -115,26 +112,23 @@ int main( int argc, char** argv)
 	int rank, size;
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
-	float result_host=0.0;
-	float result_total=10.0;
-	float result_mpi=0.0;
-
-	initialise_samples(rank);
+	double result_total=0.0;
+	double result_mpi=0.0;
 	
+	Device_sampler device_sampler(thread_count,rank);
 	for (int cycle=0;cycle<cycle_count;cycle++)
 	{
-		generate_sample(&result_host);
-		result_total+=result_host;
+		double result=device_sampler.result();
+		printf("Partial Result %i on rank %i: %f\n",cycle,rank,result);
+		result_total+=result;
 	}
 	
-	printf("Partial Result on rank %i: %f\n",rank,4.0*result_total/((float) thread_count*cycle_count));
-	cudaFree(result_device);
-	cudaFree(samples_device);
+	printf("Partial Result on rank %i: %f\n",rank,result_total/static_cast<double>(cycle_count));
 	// Reduce the MPI-Samples
 	
-	MPI_Reduce(&result_total,&result_mpi,1,MPI_FLOAT,MPI_SUM,0,MPI_COMM_WORLD);
+	MPI_Reduce(&result_total,&result_mpi,1,MPI_DOUBLE,MPI_SUM,0,MPI_COMM_WORLD);
 	if (rank==0){
-		printf("Final Result over %i mpi processes: %f\n",size,4.0*result_mpi/((float) thread_count*cycle_count*size));
+		printf("Final Result over %i mpi processes: %f\n",size,result_mpi/static_cast<double>(cycle_count*size));
 	}
 	MPI_Finalize();
     return 0;
