@@ -10,4 +10,5 @@ exclude:
     - "*.pyc"
 projects:
     - monte_pi
+    - thrust_monte_pi
 jobscripts: jobscripts

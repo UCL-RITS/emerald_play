@@ -28,10 +28,12 @@ def eachproject(task):
 			return task(*args,**kwds)
 		else:
 			projects=kwds.get('projects',env.projects)
+			results=[]
 			for project in projects:
 				env.project=project
 				kwds.update(project=project)
-				return task(*args,**kwds)
+				results.append(task(*args,**kwds))
+			return results
 	return wrapper
 
 @task
@@ -62,11 +64,11 @@ def incremental(project):
 @eachproject
 def clear_build(project):
 	run("rm -rf {remote_build_path}/{project}".format(**env))
-	run("mkdir -p {remote_build_path}/{project}".format(**env))
 
 @task(alias="config")
 @eachproject
 def configure(project):
+	run("mkdir -p {remote_build_path}/{project}".format(**env))
 	with prefix("module load intel cuda"):
 		with cd("{remote_build_path}/{project}".format(**env)):
 			run("~/bin/cmake ~/{remote_source_path}/{project} -DCMAKE_INSTALL_PREFIX=~/{remote_install_path}/{project}".format(**env))
