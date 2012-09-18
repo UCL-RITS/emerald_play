@@ -12,6 +12,7 @@
 #include <thrust/transform_reduce.h>
 #include <thrust/functional.h>
 #include <thrust/tuple.h>
+#include <thrust/random.h>
 
 const int thread_count=32;
 const int cycle_count=2;
@@ -29,13 +30,14 @@ public:
 	__device__ void seed(unsigned long seed, int index)
 	{
 		id=index;
-		curand_init ( seed, id, 0, &randState );
+		engine.seed(seed+index);
+		engine();
 	}
 
 	__device__ void generate()
 	{
-	    x= curand_uniform( &randState );
-		y= curand_uniform( &randState );
+	    x= uniform0to1(engine);
+		y= uniform0to1(engine);
 	}
 
 	__host__ __device__ bool within()
@@ -49,7 +51,8 @@ public:
 	}
 private:
 	int id;
-	curandState randState;
+	thrust::default_random_engine engine;
+	thrust::uniform_real_distribution<double> uniform0to1;
 	double x;
 	double y;
 };
