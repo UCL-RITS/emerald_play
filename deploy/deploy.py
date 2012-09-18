@@ -93,15 +93,23 @@ def install(project):
 def sub(project):
 	run("mkdir -p ~/{jobscripts}/".format(**env))
 	run("mkdir -p ~/{remote_results_path}/{project}".format(**env))
-	upload_template(filename="{templates}/{project}.sh".format(**env),destination="~/{jobscripts}/".format(**env),context=env)
+	upload_template(filename="{templates}/default.sh".format(**env),destination="~/{jobscripts}/".format(**env),context=env)
 	with prefix("module load intel cuda"):
-		run("bsub < ~/{jobscripts}/{project}.sh".format(**env))
+		run("bsub < ~/{jobscripts}/default.sh".format(**env))
 
 @task
 def wait():
   """Wait until all jobs currently qsubbed are complete, then return"""
   while not re.search("No unfinished",stat()):
 	time.sleep(10)
+
+@task
+@eachproject
+def latest(project):
+	latest=local("ls -1tr {localroot}/{project}/results".format(**env),capture=True)
+	last=latest.split('\n')[-3:-1]
+	for file in last:
+		local("cat {localroot}/{project}/results/{file}".format(file=file,**env))
 
 @task
 @eachproject
