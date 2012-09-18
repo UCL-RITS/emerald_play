@@ -104,5 +104,5 @@ def wait():
 @task
 @eachproject
 def fetch(project):
-	local("mkdir -p {localroot}/{project}/results")
+	local("mkdir -p {localroot}/{project}/results".format(**env))
 	local("rsync -pthrvz {username}@{remote}:{remote_results_path}/{project}/ {localroot}/{project}/results".format(**env))
