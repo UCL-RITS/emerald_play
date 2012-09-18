@@ -19,6 +19,7 @@ include_directories (${MPI_INCLUDE_PATH})
 INCLUDE(FindCUDA)
 INCLUDE(FindMPI)
 
+set(CUDA_NVCC_FLAGS -arch sm_20)
 CUDA_ADD_EXECUTABLE(monte_pi monte_pi.cu)
 target_link_libraries (monte_pi ${MPI_LIBRARIES})
 INSTALL(TARGETS monte_pi RUNTIME DESTINATION bin)

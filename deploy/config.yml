@@ -8,4 +8,6 @@ exclude:
     - deploy
     - fabfile.py
     - "*.pyc"
+projects:
+    - monte_pi
 jobscripts: jobscripts

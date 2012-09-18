@@ -1,6 +1,7 @@
 from config import *
 from fabric.contrib.project import *
 from fabric.contrib.files import *
+from functools import wraps
 @task
 def stat():
 	run('bjobs')
@@ -13,22 +14,86 @@ def sync():
 def wipe():
 	run("rm -rf {remote_source_path}".format(**env))
 	
+def eachproject(task):
+	@wraps(task)
+	def wrapper(*args,**kwds):
+		# if an explicit project is given as a kwarg or pos arg, just yield
+		if len(args)>0:
+			env.project=args[0]
+			return task(*args,**kwds)
+		elif 'project' in kwds:
+			env.project=args[0]
+			return task(*args,**kwds)
+		else:
+			projects=kwds.get('projects',env.projects)
+			for project in projects:
+				env.project=project
+				kwds.update(project=project)
+				return task(*args,**kwds)
+	return wrapper
+
 @task
+@eachproject
+def cold(project):
+	execute(clear_build,project)
+	execute(sync)
+	execute(configure,project)
+	execute(make,project)
+	execute(install,project)
+
+@task
+@eachproject
 def build(project):
-	env.project=project
+	execute(sync)
+	execute(configure,project)
+	execute(make,project)
+	execute(install,project)
+	
+@task(alias="inc")
+@eachproject
+def incremental(project):
+	execute(sync)
+	execute(make,project)
+	execute(install,project)
+
+@task(alias="clear")
+@eachproject
+def clear_build(project):
 	run("rm -rf {remote_build_path}/{project}".format(**env))
 	run("mkdir -p {remote_build_path}/{project}".format(**env))
+
+@task(alias="config")
+@eachproject
+def configure(project):
 	with prefix("module load intel cuda"):
 		with cd("{remote_build_path}/{project}".format(**env)):
 			run("~/bin/cmake ~/{remote_source_path}/{project} -DCMAKE_INSTALL_PREFIX=~/{remote_install_path}/{project}".format(**env))
+
+
+@task
+@eachproject
+def make(project):
+	with prefix("module load intel cuda"):
+		with cd("{remote_build_path}/{project}".format(**env)):
 			run("make")
+
+@task(alias="config")
+@eachproject
+def install(project):
+	with prefix("module load intel cuda"):
+		with cd("{remote_build_path}/{project}".format(**env)):
 			run("make install")
 
 @task
+@eachproject
 def sub(project):
-	env.project=project
 	run("mkdir -p ~/{jobscripts}/".format(**env))
-	run("mkdir -p ~/{results}/{project}".format(**env))
+	run("mkdir -p ~/{remote_results_path}/{project}".format(**env))
 	upload_template(filename="{templates}/{project}.sh".format(**env),destination="~/{jobscripts}/".format(**env),context=env)
 	with prefix("module load intel cuda"):
 		run("bsub ~/{jobscripts}/{project}.sh".format(**env))
+		
+@task
+@eachproject
+def fetch(project):
+	local("rsync -pthrvz {username}@{remote}:{remote_results_path}/{project}/ {localroot}/results/{project}".format(**env))
